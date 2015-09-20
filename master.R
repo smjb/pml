@@ -82,10 +82,15 @@ dDB_num_subset_train <- dDB_num_subset[dDB_num_subset_part, ]
 dDB_num_subset_test <- dDB_num_subset[-dDB_num_subset_part, ]
 
 ctrlRf <- trainControl(method="cv", 5)
-dDB_cc_model_def <- train(classe ~ ., data=dDB_num_subset_train, method="rf", 
-                          preProcess="pca", trControl=ctrlRf, ntree=250)
+dDB_cc_model_def <- train(classe ~ ., data=dDB_num_subset_train, method="rf", trControl=ctrlRf, ntree=250)
 #dDB_cc_model_def <- train(classe ~ ., data=dDB_num_subset_train, method="rf", preProcess="pca")
 #dDB_cc_model_pca <- train(classe ~ ., data=dDB_num_subset_train, preProcess="pca")
 #dDB_cc_model_rpart <- train(classe ~ ., data=dDB_num_subset_train, method="rpart")
 #dDB_cc_model_rf <- train(classe ~ ., data=dDB_num_subset_train, method="rf")
 #dDB_cc_model_boost <- train(classe ~ ., data=dDB_num_subset_train, method="rpart")
+modelpred <- predict(dDB_cc_model_def, dDB_num_subset_test)
+modelpred
+confusionMatrix(dDB_num_subset_test$classe, modelpred)
+accuracy <- postResample(modelpred, dDB_num_subset_test$classe)
+accuracy
+as.numeric(confusionMatrix(dDB_num_subset_test$classe, modelpred)$overall[1])
