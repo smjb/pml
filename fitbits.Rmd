@@ -294,6 +294,7 @@ kable(cm_gbm$table, caption="Confusion Matrix for Generalized Boosted Regression
 
 kable(round(cm_gbm$byClass,4), caption="Statistics by Class for Generalized Boosted Regression Algorithm")
 ```
+
 This model is also performing well but the time needed is much higher than Random Forest.
 The accuracy of this algoritm is low at `r paste0(round(cm_gbm$overall[1]*100,3),"%")` and the out of sample error is `r paste0(round((1-cm_gbm$overall[1])*100,3),"%")`. 
 
