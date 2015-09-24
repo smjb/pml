@@ -1,8 +1,11 @@
 ---
-title: "Exercise quality prediction based on wearables devices data"
+title: "Predicting Exercise quality based on wearables devices data"
 author: "smjb"
 date: "September 22, 2015"
-output: html_document
+output: 
+    html_document: 
+        fig_height: 9.2
+        fig_width: 9.2
 ---
 
 ```{r cache=T, echo=FALSE}
@@ -10,16 +13,52 @@ rm(list=ls())
 trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 verifyUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
 setwd("D:/coursera/sandbox/pml")
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
 
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
 ```
-```{r lib,echo=T, warning=F, error=F,message=F}
+```{r lib,echo=F, warning=F, error=F,message=F}
 library(caret)
 library(dplyr)
 library(ggplot2)
+library(grid)
 library(randomForest)
 library(rpart)
 library(rpart.plot)
-
+library(corrplot)
+library(knitr)
 ```
 
 #Introduction
@@ -84,8 +123,8 @@ We extract the names of each column and identify the columns that are actually m
 
 ```{r cleandata,cache=T, echo=T, warning=F, error=F,message=F}
 cnames <- data.frame(coln=colnames(dDB))
-cnames <- mutate(cnames, idx = as.numeric(rownames(cnames)), measurement = !grepl("^X|timestamp|window|user|classe", coln))
-mcol <- filter(cnames, measurement==TRUE) %>% select(idx)
+cnames <- mutate(cnames, idx = as.numeric(rownames(cnames)), 
+                        measurement = !grepl("^X|timestamp|window|user|classe", coln))
 
 v<-data.frame() # temporary variable
 for (i  in 1:DB_dim[2]) {
@@ -93,7 +132,8 @@ for (i  in 1:DB_dim[2]) {
     v<-rbind(v,r)
 }
 
-v <- mutate(v, extra_info = grepl("^X|timestamp|window", coln),measurement = !grepl("^X|timestamp|window|user|classe", coln))
+v <- mutate(v, extra_info = grepl("^X|timestamp|window", coln),
+                measurement = !grepl("^X|timestamp|window|user|classe", coln))
 
 #Create subset data where only measurement columns without missing values are selected
 complete_measurement_cols <- filter(v, extra_info==FALSE, isna==0)
@@ -115,35 +155,247 @@ dim_dDB_num_subset <- dim(dDB_num_subset)
 ```
 After the cleaning and subsetting process, the cleaned training data dimension is `r dim_dDB_num_subset[1]` rows and `r dim_dDB_num_subset[2]` columns.
 
+##Exploratory visualization
+The experiment objective is to see whether we can predict the quality of the exercise lifting a dumbbell. The researchers did experiments on 6 test subject, each of them has 4 sensors attached : Arm, Forearm, Belt and Dumbbell. Each of the test subject will then lift the dumbbell in 5 different ways labeled [`A`, `B`, `C`, `D`, `E`], `A` being the correct way while the others are not.
+
+```{r echo=F, cache=T}
+d<-dDB
+```
+```{r echo=F, eval=F}
+d<-dim_dDB_num_subset
+```
+```{r exp_db1, echo=F, cache=T}
+dumbbell_1<-ggplot(d, aes(roll_dumbbell,pitch_dumbbell))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+```{r exp_db2,echo=F, cache=T}
+
+dumbbell_2<-ggplot(d, aes(roll_dumbbell,yaw_dumbbell))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+```{r exp_db3,echo=F, cache=T}
+
+dumbbell_3<-ggplot(d, aes(yaw_dumbbell,pitch_dumbell))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+```{r exp_db4,echo=F, cache=T}
+
+dumbbell_4<-ggplot(d, aes(roll_dumbbell,yaw_dumbbell))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+```{r exp_belt1,echo=F, cache=T}
+
+belt_1<-ggplot(d, aes(roll_belt,pitch_belt))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+```{r exp_belt2,echo=F, cache=T}
+
+belt_2<-ggplot(d, aes(roll_belt,yaw_belt))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+```{r exp_arm1,echo=F, cache=T}
+
+arm_1<-ggplot(d, aes(roll_arm,pitch_arm))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+```{r exp_arm2,echo=F, cache=T}
+
+arm_2<-ggplot(d, aes(roll_arm,yaw_arm))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+```{r exp_fa1,echo=F, cache=T}
+
+forearm_1<-ggplot(d, aes(roll_forearm,pitch_forearm))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+```{r exp_fa21,echo=F, cache=T}
+forearm_2<-ggplot(d, aes(roll_forearm,yaw_forearm))+geom_point(alpha=0.07)+aes(color=user_name,shape=user_name)+facet_wrap(~classe)+theme(panel.background=element_rect(fill="white"),legend.position=c(5/6,.25),legend.key = element_rect(fill = "white"))+guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+The Roll,Pitch & Yaw plots in Appendix shows the relationship between the Roll, Pitch & Yaw of each sensors grouped by the exercise Class and the test subject. We observe that the pattern are plausibly different between the classes but the pattern is also highly dependant on the test subject. The prediction model for the exercise class may be unsuitable to predict another subject exercise quality. 
+
 ##Predicting
 
+###Preparation
+We separate the cleaned dataset into a 65:35 training and test subsets. 
 ```{r predict,cache=T, echo=T, warning=F, error=F,message=F}
 set.seed(13927) 
 dDB_num_subset_part <- createDataPartition(dDB_num_subset$classe, p=0.65, list=F)
 dDB_num_subset_train <- dDB_num_subset[dDB_num_subset_part, ]
 dDB_num_subset_test <- dDB_num_subset[-dDB_num_subset_part, ]
+```
+We use 5-fold cross validation when we apply each of the algorithm
+```{r cross_validation_value, cache=T}
+ctrl_cv <- trainControl(method="cv", 5)
+```
+###Recursive partitioning Algorithm
+We train the Recursive Partitioning Algoritm with default values except we set the cross validation at 5-folds.
 
-ctrlRf <- trainControl(method="cv", 5)
+```{r predict_rpart,cache=T, echo=F, warning=F, error=F,message=F}
+dDB_cc_model_rpart <- train(classe ~ ., data=dDB_num_subset_train, method="rpart", trControl=ctrl_cv)
 ```
-```{r predict_rpart,cache=T, echo=T, warning=F, error=F,message=F}
-dDB_cc_model_rpart <- train(classe ~ ., data=dDB_num_subset_train, method="rpart", trControl=ctrlRf)
-dDB_cc_model_rpart
-```
-```{r predict_rf,cache=T, echo=T, warning=F, error=F,message=F}
-dDB_cc_model_rf <- train(classe ~ ., data=dDB_num_subset_train, method="rf", trControl=ctrlRf, ntree=250)
-dDB_cc_model_rf
-```
-```{r predict_gbm,cache=T, echo=T, warning=F, error=F,message=F}
-dDB_cc_model_gbm <- train(classe ~ ., data=dDB_num_subset_train, method="gbm", trControl=ctrlRf)
-dDB_cc_model_gbm
-
+```{r predict_rpart,echo=T,eval=F}
 ```
 
-```{r acc_rpart,cache=T, echo=T, warning=F, error=F,message=F}
+```{r acc_rpart,cache=T, echo=T, warning=F, error=F,message=F, results='hide'}
 modelpred_rpart <- predict(dDB_cc_model_rpart, dDB_num_subset_test)
-modelpred_rpart
-confusionMatrix(dDB_num_subset_test$classe, modelpred_rpart)
-accuracy <- postResample(modelpred_rpart, dDB_num_subset_test$classe)
-accuracy
-as.numeric(confusionMatrix(dDB_num_subset_test$classe, modelpred_rpart)$overall[1])
+cm_rpart <- confusionMatrix(dDB_num_subset_test$classe, modelpred_rpart)
+accuracy_rpart <- postResample(modelpred_rpart, dDB_num_subset_test$classe)
+```
+```{r finalmodel_rpart, echo=F, cache=TRUE}
+dDB_cc_model_rpart$finalModel
+```
+```{r kbl_rpart, echo=F, cache=T}
+kable(cm_rpart$table, caption="Confusion Matrix for Recursive Partitioning Algorithm")
+kable(round(cm_rpart$byClass,4), caption="Statistics by Class for Recursive Partitioning Algorithm")
+```
+
+From the Confusion Matrix, we see that the algorithm did not manage to distinguish class `D` and there is no Predictive Value for `D` at all. Furthermore, False positive for class `E` the lowest among all. Due to the pecularity that it does not suggest `D` and heavily favorise `A`, `B` and `C` , this suggests that the algorithm needs more tuning to be more effective.
+
+The accuracy of this algoritm is low at `r paste0(round(cm_rpart$overall[1]*100,3),"%")` and the out of sample error is `r paste0(round((1-cm_rpart$overall[1])*100,3),"%")`. . 
+
+###Random Forest Algorithm
+
+We use Random Forest Algoritm to model the dataset. 
+
+```{r predict_rf,cache=T, echo=F, warning=F, error=F,message=F, results='hide'}
+dDB_cc_model_rf <- train(classe ~ ., data=dDB_num_subset_train, method="rf", trControl=ctrl_cv, ntree=250)
+```
+```{r predict_rf,echo=T,eval=F}
+```
+
+```{r acc_rf,cache=T, echo=T, warning=F, error=F,message=F}
+modelpred_rf <- predict(dDB_cc_model_rf, dDB_num_subset_test)
+cm_rf<-confusionMatrix(dDB_num_subset_test$classe, modelpred_rf)
+accuracy_rf <- postResample(modelpred_rf, dDB_num_subset_test$classe)
+```
+```{r final_rf, echo=F, cache=T}
+dDB_cc_model_rf$finalModel
+```
+This method seems to fit the test data very well. The accuracy of this algoritm is very high at `r paste0(round(cm_rf$overall[1]*100,3),"%")` and the out of sample error is `r paste0(round((1-cm_rf$overall[1])*100,3),"%")`.  
+
+```{r kbl_rf, echo=F, cache=T}
+kable(cm_rf$table, caption="Confusion Matrix for Random Forest Algorithm")
+
+kable(round(cm_rf$byClass,4), caption="Statistics by Class for Random Forest Algorithm")
+```
+
+###Generalized Boosted Regression Algorithm
+
+We use Generalized Boosted Regression Algorithm to model the dataset.
+
+```{r predict_gbm,cache=T, echo=F, warning=F, error=F,message=F, results='hide'}
+dDB_cc_model_gbm <- train(classe ~ ., data=dDB_num_subset_train, method="gbm", trControl=ctrl_cv)
+```
+```{r predict_gbm,echo=T,eval=F}
+```
+```{r finalmodel_gbm, echo=F, cache=T}
+dDB_cc_model_gbm$finalModel
+```
+
+```{r acc_gbm,cache=T, echo=T, warning=F, error=F,message=F}
+modelpred_gbm <- predict(dDB_cc_model_gbm, dDB_num_subset_test)
+cm_gbm<-confusionMatrix(dDB_num_subset_test$classe, modelpred_gbm)
+accuracy_gbm <- postResample(modelpred_gbm, dDB_num_subset_test$classe)
+```
+
+```{r kbl_gbm ,echo=F, cache=T}
+kable(cm_gbm$table, caption="Confusion Matrix for Generalized Boosted Regression Algorithm")
+
+kable(round(cm_gbm$byClass,4), caption="Statistics by Class for Generalized Boosted Regression Algorithm")
+```
+This model is also performing well but the time needed is much higher than Random Forest.
+The accuracy of this algoritm is low at `r paste0(round(cm_gbm$overall[1]*100,3),"%")` and the out of sample error is `r paste0(round((1-cm_gbm$overall[1])*100,3),"%")`. 
+
+###Comparison
+
+```{r comp_algo, cache=T, echo=F}
+overall_compare<-rbind(cm_rpart$overall, cm_rf$overall, cm_gbm$overall)
+overall_compare<-cbind(Algorithm=c("rpart","rf", "gbm"), round(overall_compare,4))
+kable(overall_compare, caption="Overall statistics Comparison")
+```
+
+From the table above, we see that Random Forest Algorithm performed very well followed by Generalized Boosted Regression Algorithm.  Recursive Partitioning Algorithm may need some further tuning to be at par with the other two.
+
+#Testing against Validation Dataset
+
+We use Random Forest Algorithm to predict the validation dataset.
+
+```{r cleanverify,cache=T, echo=T, warning=F, error=F,message=F}
+#Execute the column selection for the Validation Dataset
+dVerify_subset <- select(dVerify, complete_measurement_cols$idx,-problem_id)
+dVerify_num_subset_idx <- sapply(dVerify_subset, is.numeric)
+dVerify_num_subset <- dVerify_subset[,dVerify_num_subset_idx]
+dim_dVerify_num_subset <- dim(dVerify_num_subset)
+```
+```{r predval,cache=T, echo=T, warning=F, error=F,message=F}
+valpred_rf <- predict(dDB_cc_model_rf, dVerify_num_subset)
+```
+The predicted class for each problem_id is 
+```{r showval}
+valpred_rf
+```
+```{r submission_gen, echo=F}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("submission\\problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+```
+```{r submit_pred, echo=F}
+pml_write_files(valpred_rf)
+```
+
+#Appendix
+##Roll, Pitch & Yaw plots
+```{r pexp_db,echo=F, cache=T}
+
+multiplot(dumbbell_1, dumbbell_2, cols=2)
+```
+```{r pexp_belt,echo=F, cache=T}
+multiplot(belt_1, belt_2, cols=2)
+```
+```{r pexp_arm,echo=F, cache=T}
+multiplot(arm_1, arm_2, cols=2)
+```
+```{r pexp_fa,echo=F, cache=T}
+multiplot(forearm_1, forearm_2, cols=2)
+```
+
+```{r corplot_pedro, cache=T, echo=F, eval=F}
+nn  <- mutate(cnames, belt = grepl("belt", coln), dumbbell = grepl("dumbbell", coln), forearm = grepl("forearm", coln), arm=grepl("_arm", coln))
+
+belt_data <-select(dDB, nn$idx[nn$belt==T])
+belt_data <- cbind(belt_data, username = dDB$user_name, classe=dDB$classe)
+
+bdd <- dim(belt_data)
+
+v<-data.frame() # temporary variable
+for (i  in 1:bdd[2]) {
+    r <- data.frame(idx=i, coln=names(belt_data)[i], isna = length(which(is.na(belt_data[,i]))))
+    v<-rbind(v,r)
+}
+
+belt_data <- select(belt_data, v$idx[v$isna==0])
+bdn <- sapply(belt_data, is.numeric)
+belt_data <- cbind(belt_data[,bdn], belt_data[,c("username", "classe")])
+
+sut <- filter(belt_data, username=="pedro", classe=="A")
+sut_corr <- cor(sut[,1:(length(colnames(belt_data))-2)])
+pa<-corrplot(sut_corr, method="color")
+
+sut <- filter(belt_data, username=="pedro", classe=="B")
+sut_corr <- cor(sut[,1:(length(colnames(belt_data))-2)])
+pb<-corrplot(sut_corr, method="color")
+
+sut <- filter(belt_data, username=="pedro", classe=="C")
+sut_corr <- cor(sut[,1:(length(colnames(belt_data))-2)])
+pc<-corrplot(sut_corr, method="color")
+
+sut <- filter(belt_data, username=="pedro", classe=="D")
+sut_corr <- cor(sut[,1:(length(colnames(belt_data))-2)])
+pd<-corrplot(sut_corr, method="color")
+
+sut <- filter(belt_data, username=="pedro", classe=="E")
+sut_corr <- cor(sut[,1:(length(colnames(belt_data))-2)])
+pe<-corrplot(sut_corr, method="color")
+
+sut <- filter(belt_data, username=="pedro")
+sut_corr <- cor(sut[,1:(length(colnames(belt_data))-2)])
+pf<-corrplot(sut_corr, method="color")
+
+
 ```
